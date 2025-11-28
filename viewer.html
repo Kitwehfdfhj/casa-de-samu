@@ -9,30 +9,30 @@
   body{
     font-family:"Cairo",sans-serif;
     margin:0;
-    background: linear-gradient(135deg, #0f172a, #1e293b, #3b82f6);
+    background: linear-gradient(135deg, #000000, #0e0e0e, #777676);
     min-height:100vh;
-    color:white;
+    color:rgb(255, 255, 255);
   }
 
   header{
-    background: rgba(255,255,255,0.1);
+    
     backdrop-filter: blur(15px);
     padding: 20px;
     text-align:center;
     font-size:28px;
     font-weight:bold;
     letter-spacing:1px;
-    text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    text-shadow: 0 2px 8px rgb(255, 0, 0);
   }
 
   .wrap{
     max-width:800px;
     margin:30px auto;
     padding:20px;
-    background: rgba(255,255,255,0.05);
+    background: rgba(0, 0, 0, 0.05);
     border-radius:20px;
     backdrop-filter: blur(15px);
-    box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+    box-shadow: 0 10px 40px rgb(0, 0, 0);
   }
 
   label{
@@ -49,12 +49,13 @@
     border:none;
     font-size:16px;
     outline:none;
-    background: rgba(255,255,255,0.1);
-    color:black; /* جعل النص باللون الأسود */
+    background: rgba(0, 0, 0, 0.1);
+    color:rgb(255, 255, 255); /* جعل النص باللون الأسود */
     margin-bottom:20px;
     -webkit-appearance: none;
     -moz-appearance: none;
     appearance: none;
+    box-shadow: 0 10px 40px rgba(255, 0, 0, 0.671);
   }
 
   select option{
@@ -62,50 +63,50 @@
   }
 
   .task{
-    background: rgba(255,255,255,0.1);
+    background: rgba(255, 254, 254, 0.1);
     padding:16px;
     border-radius:12px;
     margin-bottom:12px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
     transition: transform 0.2s, box-shadow 0.2s;
   }
 
   .task:hover{
     transform: translateY(-2px);
-    box-shadow: 0 6px 25px rgba(0,0,0,0.5);
+    box-shadow: 0 6px 25px rgb(255, 0, 0);
   }
 
   .task strong{
     display:block;
     font-size:18px;
     margin-bottom:6px;
-    color:#f1f5f9;
+    color:#f3f9ff;
   }
 
   .task .date{
     font-size:14px;
-    color:#cbd5e1;
+    color:#bbff00;
     margin-bottom:4px;
   }
 
   .no-task{
     text-align:center;
     font-size:16px;
-    color:#f87171;
+    color:#ffffff;
     padding:12px;
-    background: rgba(255,255,255,0.1);
+    background: rgba(0, 0, 0, 0.1);
     border-radius:12px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    box-shadow: 0 10px 40px rgba(255, 0, 0, 0.658);
   }
 
 </style>
 </head>
 <body>
 
-<header>المهام اليومية</header>
+<header>Tareas diarias</header>
 
 <div class="wrap">
-  <label>اختر اسمك</label>
+  <label>Elige tu nombre</label>
   <select id="viewerSelect"></select>
 
   <div id="tasksArea" style="margin-top:14px"></div>
@@ -174,7 +175,7 @@ function loadTasks(personId) {
     });
 
     if (!found) {
-      tasksArea.innerHTML = "<div class='no-task'>لا توجد مهام</div>";
+      tasksArea.innerHTML = "<div class='no-task'>Sin tareas</div>";
     }
   });
 }
