@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>لوحة الإدارة — غرف المستخدمين</title>
+<style>
+  body{font-family:"Cairo",sans-serif;margin:0;background:linear-gradient(135deg,#0f172a,#1e293b);min-height:100vh;color:#fff}
+  #container{display:flex;gap:18px;max-width:1100px;margin:22px auto;padding:18px}
+  #left{width:320px;background:rgba(255,255,255,0.03);border-radius:12px;padding:12px}
+  #right{flex:1;background:rgba(255,255,255,0.03);border-radius:12px;padding:12px;display:flex;flex-direction:column;height:80vh}
+  h3{margin:4px 0 8px 0}
+  .userItem{display:flex;align-items:center;justify-content:space-between;padding:8px;border-bottom:1px solid rgba(255,255,255,0.03);cursor:pointer}
+  .userItem:hover{background:rgba(255,255,255,0.02)}
+  .userLeft{display:flex;gap:10px;align-items:center}
+  .online-dot{width:10px;height:10px;border-radius:50%;background:#00ff44}
+  .offline-dot{width:10px;height:10px;border-radius:50%;background:#777}
+  #messagesArea{flex:1;overflow:auto;padding:6px;border-radius:8px;background:rgba(0,0,0,0.06)}
+  .msg{margin-bottom:10px;padding:8px;border-radius:8px;background:rgba(255,255,255,0.03)}
+  .msg.admin{background:rgba(59,130,246,0.08);text-align:left}
+  .msg .who{font-size:13px;color:#bbff00;margin-bottom:6px;display:block}
+  #adminControls{display:flex;gap:8px;margin-top:8px}
+  textarea{width:100%;height:80px;border-radius:8px;padding:8px;border:none;background:rgba(255,255,255,0.04);color:white;resize:none}
+  button{padding:10px 14px;border-radius:8px;border:none;background:#2563eb;color:white;cursor:pointer}
+  #logoutBtn{background:#ef4444}
+</style>
+</head>
+<body>
+
+<!-- الواجهة الرئيسية للإدارة مباشرة -->
+<div id="container">
+  <div id="left">
+    <h3>قائمة المستخدمين</h3>
+    <div id="usersList" style="max-height:70vh;overflow:auto"></div>
+  </div>
+
+  <div id="right">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <h3 id="roomTitle">اختر مستخدماً لعرض غرفته</h3>
+        <div id="roomSub" style="color:#cbd5e1;font-size:13px"></div>
+      </div>
+      <div>
+        <button id="logoutBtn">خروج</button>
+      </div>
+    </div>
+
+    <div id="messagesArea"></div>
+
+    <div id="typingIndicator" style="color:#00eaff;height:20px;margin-top:6px"></div>
+
+    <div id="adminControls">
+      <textarea id="adminReply" placeholder="اكتب رد الإدارة هنا..."></textarea>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button id="sendReplyBtn">إرسال الرد</button>
+        <button id="clearRoomBtn">مسح غرفة</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js";
+import { getDatabase, ref, set, push, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCiMs-fSIJi1Jwi6_BSddsmCZ5GXatdcEA",
+  authDomain: "casa-7bc46.firebaseapp.com",
+  databaseURL: "https://casa-7bc46-default-rtdb.firebaseio.com",
+  projectId: "casa-7bc46",
+  storageBucket: "casa-7bc46.firebasestorage.app",
+  messagingSenderId: "464116381670",
+  appId: "1:464116381670:web:03d98f8aeea6769d4b8827"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+/* DOM */
+const usersList = document.getElementById("usersList");
+const roomTitle = document.getElementById("roomTitle");
+const roomSub = document.getElementById("roomSub");
+const messagesArea = document.getElementById("messagesArea");
+const adminReply = document.getElementById("adminReply");
+const sendReplyBtn = document.getElementById("sendReplyBtn");
+const typingIndicator = document.getElementById("typingIndicator");
+const clearRoomBtn = document.getElementById("clearRoomBtn");
+const logoutBtn = document.getElementById("logoutBtn");
+
+let selectedUserId = null;
+let selectedUserName = null;
+
+/* قائمة المستخدمين */
+onValue(ref(db, "users"), (snap) => {
+  usersList.innerHTML = "";
+  snap.forEach(child => {
+    const u = child.val();
+    const id = child.key;
+    const div = document.createElement("div");
+    div.className = "userItem";
+    div.innerHTML = `
+      <div class="userLeft">
+        <span class="${u.online ? 'online-dot' : 'offline-dot'}"></span>
+        <div>
+          <div style="font-weight:bold">${u.name}</div>
+          <div style="font-size:12px;color:#cbd5e1">id: ${id}</div>
+        </div>
+      </div>
+      <div>
+        <button data-id="${id}" class="openBtn">فتح</button>
+      </div>
+    `;
+    usersList.appendChild(div);
+  });
+
+  const openBtns = usersList.querySelectorAll(".openBtn");
+  openBtns.forEach(b => {
+    b.onclick = () => {
+      selectedUserId = b.getAttribute("data-id");
+      const uName = document.querySelector(`#usersList button[data-id="${selectedUserId}"]`)?.closest(".userItem")?.querySelector("div > div > div")?.textContent || "";
+      selectedUserName = uName || selectedUserId;
+      roomTitle.textContent = `غرفة: ${selectedUserName}`;
+      roomSub.textContent = `المستخدم: ${selectedUserId}`;
+      listenRoom(selectedUserId);
+      listenTyping(selectedUserId);
+    };
+  });
+});
+
+/* الاستماع لرسائل الغرفة */
+function listenRoom(userId){
+  if(!userId) return;
+  messagesArea.innerHTML = "";
+  const roomRef = ref(db, "chatMessages/" + userId);
+  onValue(roomRef, (snap) => {
+    messagesArea.innerHTML = "";
+    snap.forEach(child => {
+      const m = child.val();
+      const d = document.createElement("div");
+      d.className = "msg " + (m.from === "admin" ? "admin" : "user");
+      d.innerHTML = `<span class="who">${m.from === 'admin' ? 'الإدارة' : (m.name || 'المستخدم')}</span>
+                     <div>${m.text}</div>
+                     <div style="font-size:11px;color:#9aa4b2;margin-top:6px">${m.timestamp ? new Date(m.timestamp).toLocaleString() : ''}</div>`;
+      messagesArea.appendChild(d);
+    });
+    messagesArea.scrollTop = messagesArea.scrollHeight;
+  });
+}
+
+/* الاستماع للtyping */
+function listenTyping(userId){
+  if(!userId) { typingIndicator.textContent = ""; return; }
+  onValue(ref(db, "typing/" + userId), (snap) => {
+    const v = snap.val();
+    typingIndicator.textContent = v?.typing ? "…يكتب الآن" : "";
+  });
+}
+
+/* إرسال الرد */
+sendReplyBtn.onclick = async () => {
+  if(!selectedUserId) return alert("اختر مستخدماً أولاً");
+  const txt = adminReply.value.trim();
+  if(!txt) return alert("اكتب الرد أولاً");
+  const roomRef = ref(db, "chatMessages/" + selectedUserId);
+  await push(roomRef, {
+    text: txt,
+    from: "admin",
+    name: "الإدارة",
+    timestamp: Date.now()
+  });
+  set(ref(db, "typing/" + selectedUserId), { typing: false });
+  adminReply.value = "";
+};
+
+/* مسح الغرفة */
+clearRoomBtn.onclick = () => {
+  if(!selectedUserId) return alert("اختر مستخدماً");
+  if(!confirm("مسح كل رسائل هذه الغرفة؟")) return;
+  remove(ref(db, "chatMessages/" + selectedUserId));
+};
+
+/* زر الخروج */
+logoutBtn.onclick = () => {
+  alert("الخروج غير مفعل، الصفحة مفتوحة دائماً.");
+};
+</script>
+</body>
+</html>
