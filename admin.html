@@ -1,47 +1,57 @@
 <!doctype html>
-<html lang="ar" dir="rtl">
+<html lang="es" dir="ltr">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>لوحة الإدارة — غرف المستخدمين</title>
+<title id="pageTitle">Panel de Administración — Salas de usuarios</title>
 <style>
   body{font-family:"Cairo",sans-serif;margin:0;background:linear-gradient(135deg,#0f172a,#1e293b);min-height:100vh;color:#fff}
   #container{display:flex;gap:18px;max-width:1100px;margin:22px auto;padding:18px}
-  #left{width:320px;background:rgba(255,255,255,0.03);border-radius:12px;padding:12px}
-  #right{flex:1;background:rgba(255,255,255,0.03);border-radius:12px;padding:12px;display:flex;flex-direction:column;height:80vh}
+  #left{width:340px;background:rgba(255,255,255,0.03);border-radius:12px;padding:14px}
+  #right{flex:1;background:rgba(255,255,255,0.03);border-radius:12px;padding:14px;display:flex;flex-direction:column;height:80vh}
   h3{margin:4px 0 8px 0}
-  .userItem{display:flex;align-items:center;justify-content:space-between;padding:8px;border-bottom:1px solid rgba(255,255,255,0.03);cursor:pointer}
+  .userItem{display:flex;align-items:center;justify-content:space-between;padding:10px;border-bottom:1px solid rgba(255,255,255,0.03);cursor:pointer;position:relative}
   .userItem:hover{background:rgba(255,255,255,0.02)}
   .userLeft{display:flex;gap:10px;align-items:center}
   .online-dot{width:10px;height:10px;border-radius:50%;background:#00ff44}
   .offline-dot{width:10px;height:10px;border-radius:50%;background:#777}
-  #messagesArea{flex:1;overflow:auto;padding:6px;border-radius:8px;background:rgba(0,0,0,0.06)}
-  .msg{margin-bottom:10px;padding:8px;border-radius:8px;background:rgba(255,255,255,0.03)}
+  .userMeta{display:flex;flex-direction:column}
+  .lastSeen{font-size:11px;color:#9aa4b2}
+  .badge-unread{background:#ef4444;color:white;border-radius:12px;padding:3px 8px;font-size:12px;margin-left:8px}
+  #messagesArea{flex:1;overflow:auto;padding:8px;border-radius:8px;background:rgba(0,0,0,0.06)}
+  .msg{margin-bottom:10px;padding:10px;border-radius:8px;background:rgba(255,255,255,0.03)}
   .msg.admin{background:rgba(59,130,246,0.08);text-align:left}
-  .msg .who{font-size:13px;color:#bbff00;margin-bottom:6px;display:block}
+  .msg .who{font-size:13px;color:#0ea5a2;margin-bottom:6px;display:block}
   #adminControls{display:flex;gap:8px;margin-top:8px}
   textarea{width:100%;height:80px;border-radius:8px;padding:8px;border:none;background:rgba(255,255,255,0.04);color:white;resize:none}
   button{padding:10px 14px;border-radius:8px;border:none;background:#2563eb;color:white;cursor:pointer}
-  #logoutBtn{background:#ef4444}
+  button.clear{background:#ef4444}
+  .meta{font-size:12px;color:#cbd5e1}
+  .smallMuted{font-size:12px;color:#9aa4b2}
 </style>
 </head>
 <body>
 
-<!-- الواجهة الرئيسية للإدارة مباشرة -->
+<!-- Audio para notificación -->
+<audio id="msgSound">
+  <source src="https://assets.mixkit.co/sfx/preview/mixkit-message-pop-alert-2354.mp3" type="audio/mpeg">
+</audio>
+
+<!-- Contenedor -->
 <div id="container">
   <div id="left">
-    <h3>قائمة المستخدمين</h3>
-    <div id="usersList" style="max-height:70vh;overflow:auto"></div>
+    <h3>Lista de usuarios</h3>
+    <div id="usersList" style="max-height:76vh;overflow:auto"></div>
   </div>
 
   <div id="right">
     <div style="display:flex;justify-content:space-between;align-items:center">
       <div>
-        <h3 id="roomTitle">اختر مستخدماً لعرض غرفته</h3>
-        <div id="roomSub" style="color:#cbd5e1;font-size:13px"></div>
+        <h3 id="roomTitle">Selecciona un usuario para ver su sala</h3>
+        <div id="roomSub" class="meta"></div>
       </div>
       <div>
-        <button id="logoutBtn">خروج</button>
+        <button id="logoutBtn">Salir</button>
       </div>
     </div>
 
@@ -50,18 +60,27 @@
     <div id="typingIndicator" style="color:#00eaff;height:20px;margin-top:6px"></div>
 
     <div id="adminControls">
-      <textarea id="adminReply" placeholder="اكتب رد الإدارة هنا..."></textarea>
+      <textarea id="adminReply" placeholder="Escribe la respuesta de la Administración..."></textarea>
       <div style="display:flex;flex-direction:column;gap:8px">
-        <button id="sendReplyBtn">إرسال الرد</button>
-        <button id="clearRoomBtn">مسح غرفة</button>
+        <button id="sendReplyBtn">Enviar respuesta</button>
+        <button id="clearRoomBtn" class="clear">Borrar sala</button>
       </div>
     </div>
   </div>
 </div>
 
 <script type="module">
+/*
+  admin.html (ES)
+  - Funcionalidades añadidas:
+    1) unread count por usuario (en DB: unread/{uid}/count)
+    2) lastSeen se muestra desde users/{uid}.lastSeen (se espera que cliente actualice هذا)
+    3) service worker registration + show notifications incluso عندما pagina en bg (para push se necesita FCM/server)
+    4) notificación + sonido + badge en título + contador global de no leídos
+*/
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js";
-import { getDatabase, ref, set, push, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js";
+import { getDatabase, ref, set, push, onValue, remove, get, child, runTransaction } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCiMs-fSIJi1Jwi6_BSddsmCZ5GXatdcEA",
@@ -86,103 +105,294 @@ const sendReplyBtn = document.getElementById("sendReplyBtn");
 const typingIndicator = document.getElementById("typingIndicator");
 const clearRoomBtn = document.getElementById("clearRoomBtn");
 const logoutBtn = document.getElementById("logoutBtn");
+const audio = document.getElementById("msgSound");
+const pageTitle = document.getElementById("pageTitle");
 
 let selectedUserId = null;
 let selectedUserName = null;
+let swRegistration = null;
+let unreadListeners = {}; // listeners for onChildAdded per user
+let lastMessageTimestamp = 0;
 
-/* قائمة المستخدمين */
-onValue(ref(db, "users"), (snap) => {
+/* Register service worker (SW) to enable notifications + background when using FCM */
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').then(reg => {
+    console.log('Service Worker registrado', reg);
+    swRegistration = reg;
+  }).catch(err => {
+    console.warn('No se pudo registrar Service Worker:', err);
+  });
+}
+
+// Solicitar permiso de notificaciones al cargar
+if (Notification.permission !== "granted") {
+  Notification.requestPermission();
+}
+
+/* ---------- FUNCIONES DE NOTIFICACIÓN ---------- */
+
+let flashing = false;
+function startFlash(badgeCount = 0){
+  if(flashing) return;
+  flashing = true;
+  const original = document.title;
+  let toggle = false;
+  const interval = setInterval(()=>{
+    if(!flashing){ clearInterval(interval); document.title = original; return; }
+    document.title = toggle ? `📩 (${badgeCount}) Nuevos mensajes` : original;
+    toggle = !toggle;
+  }, 700);
+}
+function stopFlash(){ flashing = false; }
+
+function showDesktopNotification(title, body){
+  if(Notification.permission === "granted"){
+    // si SW está registrado, pedir له عرض الإشعار
+    if(swRegistration && swRegistration.showNotification){
+      try{
+        swRegistration.showNotification(title, {
+          body,
+          icon: "https://cdn-icons-png.flaticon.com/512/889/889140.png",
+          tag: 'chat-notif'
+        });
+      } catch(e){ 
+        // fallback
+        new Notification(title, { body, icon: "https://cdn-icons-png.flaticon.com/512/889/889140.png" });
+      }
+    } else {
+      new Notification(title, { body, icon: "https://cdn-icons-png.flaticon.com/512/889/889140.png" });
+    }
+  }
+}
+
+// reproducir sonido
+function playSound(){ 
+  try{ audio.currentTime = 0; audio.play(); } catch(e){} 
+}
+
+/* ---------- LÓGICA DE LISTA DE USUARIOS / UNREAD / LASTSEEN ---------- */
+
+/*
+  Estructura en la DB esperada:
+  - users/{uid} => { name, online: true/false, lastSeen: timestamp }
+  - chatMessages/{uid}/{msgId} => { text, from: "user"|"admin", name, timestamp }
+  - unread/{uid}/count => number
+*/
+
+const usersRef = ref(db, "users");
+
+// leer lista de usuarios y construir UI
+onValue(usersRef, (snap) => {
   usersList.innerHTML = "";
+
   snap.forEach(child => {
-    const u = child.val();
+    const u = child.val() || {};
     const id = child.key;
+
+    // crear elemento si لا موجود
     const div = document.createElement("div");
     div.className = "userItem";
+    div.id = `user-${id}`;
+
+    // obtener unread count (lo leeremos en paralelo y actualizaremos)
+    // también mostraremos lastSeen si existe
+    const lastSeen = u.lastSeen ? new Date(u.lastSeen).toLocaleString() : "sin actividad";
+
     div.innerHTML = `
       <div class="userLeft">
         <span class="${u.online ? 'online-dot' : 'offline-dot'}"></span>
-        <div>
-          <div style="font-weight:bold">${u.name}</div>
-          <div style="font-size:12px;color:#cbd5e1">id: ${id}</div>
+        <div class="userMeta">
+          <div style="font-weight:bold">${u.name || id}</div>
+          <div class="lastSeen">Últ. actividad: ${lastSeen}</div>
         </div>
       </div>
-      <div>
-        <button data-id="${id}" class="openBtn">فتح</button>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div id="badge-${id}"></div>
+        <button data-id="${id}" class="openBtn">Abrir</button>
       </div>
     `;
     usersList.appendChild(div);
+
+    // escuchar unread count de este usuario y actualizar badge
+    const unreadRef = ref(db, `unread/${id}/count`);
+    onValue(unreadRef, (uSnap) => {
+      const count = uSnap.val() || 0;
+      const badgeEl = document.getElementById(`badge-${id}`);
+      if(!badgeEl) return;
+      badgeEl.innerHTML = count > 0 ? `<span class="badge-unread">${count}</span>` : '';
+      // actualizar عنوان الصفحة global badge (sumar todos)
+      updateGlobalUnreadBadge();
+    });
+
+    // attach listener para nuevo mensaje en la sala (si no existe aún)
+    if(!unreadListeners[id]){
+      const roomRef = ref(db, `chatMessages/${id}`);
+      // onChildAdded => detecta mensajes nuevos
+      onValue(roomRef, (roomSnap) => {
+        // cuando haya nuevos mensajes, se activa onValue; para detectar solo añadidos, podemos comparar timestamps,
+        // pero aquí simplificamos: contamos total y vemos el último mensaje
+        let lastTs = 0;
+        let lastMsg = null;
+        roomSnap.forEach(mch => {
+          const m = mch.val();
+          if(m && m.timestamp && m.timestamp > lastTs){
+            lastTs = m.timestamp;
+            lastMsg = m;
+          }
+        });
+        // si hay mensaje nuevo y no estamos en la sala seleccionada => incrementar unread
+        if(lastMsg && lastMsg.from !== "admin"){
+          // si admin NO está viendo esta sala => incrementar
+          if(selectedUserId !== id){
+            // incrementar contador unread con transaction
+            const unreadCountRef = ref(db, `unread/${id}/count`);
+            runTransaction(unreadCountRef, (current) => {
+              return (current || 0) + 1;
+            }).then(()=> {
+              // mostrar notificación (desktop + sound + SW)
+              showDesktopNotification("Nuevo mensaje", `${lastMsg.name || 'Usuario'}: ${truncateText(lastMsg.text, 80)}`);
+              playSound();
+              // badge global + flash
+              startFlash();
+            }).catch(()=>{ /* ignore */ });
+          }
+        }
+      });
+      unreadListeners[id] = true; // marque listener agregado
+    }
   });
 
+  // conectar botones "Abrir" (después de construir DOM)
   const openBtns = usersList.querySelectorAll(".openBtn");
   openBtns.forEach(b => {
     b.onclick = () => {
-      selectedUserId = b.getAttribute("data-id");
-      const uName = document.querySelector(`#usersList button[data-id="${selectedUserId}"]`)?.closest(".userItem")?.querySelector("div > div > div")?.textContent || "";
-      selectedUserName = uName || selectedUserId;
-      roomTitle.textContent = `غرفة: ${selectedUserName}`;
-      roomSub.textContent = `المستخدم: ${selectedUserId}`;
-      listenRoom(selectedUserId);
-      listenTyping(selectedUserId);
+      const id = b.getAttribute("data-id");
+      selectRoom(id);
     };
   });
 });
 
-/* الاستماع لرسائل الغرفة */
+// función helper truncar
+function truncateText(s, n){
+  if(!s) return "";
+  return s.length > n ? s.slice(0,n-1) + '…' : s;
+}
+
+/* actualizar badge global (suma de todos unread) */
+function updateGlobalUnreadBadge(){
+  const allBadges = document.querySelectorAll('[id^="badge-"] .badge-unread');
+  let sum = 0;
+  allBadges.forEach(el => sum += parseInt(el.textContent || '0'));
+  if(sum > 0){
+    startFlash(sum);
+  } else {
+    stopFlash();
+  }
+  // (opcional) يمكنك أيضاً وضع رقم في عنوان الصفحة أو favicon
+}
+
+/* seleccionar sala */
+function selectRoom(id){
+  selectedUserId = id;
+  // reset unread for this user
+  set(ref(db, `unread/${id}/count`), 0).catch(()=>{});
+  // cargar mensajes
+  listenRoom(id);
+  listenTyping(id);
+  // actualizar títulos
+  const userName = document.querySelector(`#user-${id} .userMeta div:first-child`)?.textContent || id;
+  selectedUserName = userName;
+  roomTitle.textContent = `Sala: ${selectedUserName}`;
+  roomSub.textContent = `Usuario: ${id}`;
+  // reset local lastMessageTimestamp para evitar notificaciones duplicadas
+  lastMessageTimestamp = 0;
+  stopFlash();
+}
+
+/* ESCUCHAR MENSAJES DE UNA SALA */
 function listenRoom(userId){
-  if(!userId) return;
   messagesArea.innerHTML = "";
   const roomRef = ref(db, "chatMessages/" + userId);
   onValue(roomRef, (snap) => {
     messagesArea.innerHTML = "";
+    let newestTs = lastMessageTimestamp || 0;
     snap.forEach(child => {
       const m = child.val();
       const d = document.createElement("div");
       d.className = "msg " + (m.from === "admin" ? "admin" : "user");
-      d.innerHTML = `<span class="who">${m.from === 'admin' ? 'الإدارة' : (m.name || 'المستخدم')}</span>
+      d.innerHTML = `<span class="who">${m.from === 'admin' ? 'Administración' : (m.name || 'Usuario')}</span>
                      <div>${m.text}</div>
                      <div style="font-size:11px;color:#9aa4b2;margin-top:6px">${m.timestamp ? new Date(m.timestamp).toLocaleString() : ''}</div>`;
       messagesArea.appendChild(d);
+      if(m.timestamp && m.timestamp > newestTs) newestTs = m.timestamp;
     });
     messagesArea.scrollTop = messagesArea.scrollHeight;
+
+    // establecer lastMessageTimestamp para evitar notificaciones duplicadas mientras admin esté viendo la sala
+    lastMessageTimestamp = newestTs;
   });
 }
 
-/* الاستماع للtyping */
+/* ESCUCHAR TYPING */
 function listenTyping(userId){
-  if(!userId) { typingIndicator.textContent = ""; return; }
-  onValue(ref(db, "typing/" + userId), (snap) => {
-    const v = snap.val();
-    typingIndicator.textContent = v?.typing ? "…يكتب الآن" : "";
+  const tRef = ref(db, `typing/${userId}`);
+  onValue(tRef, (snap) => {
+    typingIndicator.textContent = snap.val()?.typing ? "…está escribiendo" : "";
   });
 }
 
-/* إرسال الرد */
+/* ENVIAR RESPUESTA */
 sendReplyBtn.onclick = async () => {
-  if(!selectedUserId) return alert("اختر مستخدماً أولاً");
+  if(!selectedUserId) return alert("Elige un usuario");
   const txt = adminReply.value.trim();
-  if(!txt) return alert("اكتب الرد أولاً");
-  const roomRef = ref(db, "chatMessages/" + selectedUserId);
-  await push(roomRef, {
+  if(!txt) return alert("Escribe la respuesta primero");
+  await push(ref(db, `chatMessages/${selectedUserId}`), {
     text: txt,
     from: "admin",
-    name: "الإدارة",
+    name: "Administración",
     timestamp: Date.now()
   });
-  set(ref(db, "typing/" + selectedUserId), { typing: false });
+  // además، نضع unread صفر لأن المدير قرأ/رد
+  set(ref(db, `unread/${selectedUserId}/count`), 0).catch(()=>{});
+  // حذف typing
+  set(ref(db, `typing/${selectedUserId}`), { typing: false }).catch(()=>{});
   adminReply.value = "";
+  stopFlash();
 };
 
-/* مسح الغرفة */
+/* BORRAR SALA */
 clearRoomBtn.onclick = () => {
-  if(!selectedUserId) return alert("اختر مستخدماً");
-  if(!confirm("مسح كل رسائل هذه الغرفة؟")) return;
-  remove(ref(db, "chatMessages/" + selectedUserId));
+  if(!selectedUserId) return alert("Elige un usuario");
+  if(!confirm("¿Eliminar todos los mensajes de esta sala?")) return;
+  remove(ref(db, `chatMessages/${selectedUserId}`)).catch(()=>{});
+  // reset unread
+  set(ref(db, `unread/${selectedUserId}/count`), 0).catch(()=>{});
 };
 
-/* زر الخروج */
+/* BOTÓN SALIR (solo informativo) */
 logoutBtn.onclick = () => {
-  alert("الخروج غير مفعل، الصفحة مفتوحة دائماً.");
+  alert("Salir no está activo. Esta interfaz está siempre abierta.");
 };
+
+/* ---------- UTILS / INICIALIZACION ---------- */
+
+// Cuando carga la página, actualizamos el badge global
+updateGlobalUnreadBadge();
+
+/*
+  NOTA IMPORTANTE SOBRE "NOTIFICACIONES CUANDO LA PÁGINA ESTÁ CERRADA":
+  ---------------------------------------------------------------
+  - El código anterior muestra notificaciones y usa el Service Worker para mostrarlas
+    cuando la página está en background o abierta.
+  - Para que las notificaciones lleguen cuando LA PÁGINA ESTÁ CERRADA (ventana/ pestaña no abierta)
+    necesitas configurar un servicio de 'push' como Firebase Cloud Messaging (FCM).
+  - Si quieres, te doy los pasos para:
+      1) generar credenciales FCM
+      2) conectar Realtime Database -> Cloud Function -> enviar push a los navegadores
+      3) recibir esos push en este Service Worker (sw.js)
+  - El fichero sw.js incluido (ver archivo aparte) ya maneja eventos 'push' y 'notificationclick'.
+*/
+
 </script>
 </body>
 </html>
