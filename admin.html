@@ -71,16 +71,14 @@
 
 <script type="module">
 /*
-  admin.html (ES)
-  - Funcionalidades añadidas:
-    1) unread count por usuario (en DB: unread/{uid}/count)
-    2) lastSeen se muestra desde users/{uid}.lastSeen (se espera que cliente actualice هذا)
-    3) service worker registration + show notifications incluso عندما pagina en bg (para push se necesita FCM/server)
-    4) notificación + sonido + badge en título + contador global de no leídos
+  admin.html (ES) - versión مصحّحة
+  - Corrige errores de sintaxis y cierres faltantes.
+  - Añade listener correcto para logoutBtn.
+  - Mantiene la lógica original de unread/lastSeen/mensajes.
 */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js";
-import { getDatabase, ref, set, push, onValue, remove, get, child, runTransaction } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js";
+import { getDatabase, ref, set, push, onValue, remove, runTransaction } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCiMs-fSIJi1Jwi6_BSddsmCZ5GXatdcEA",
@@ -111,58 +109,63 @@ const pageTitle = document.getElementById("pageTitle");
 let selectedUserId = null;
 let selectedUserName = null;
 let swRegistration = null;
-let unreadListeners = {}; // listeners for onChildAdded per user
+let unreadListeners = {}; // listeners per user (prevent duplicate)
 let lastMessageTimestamp = 0;
 
 /* Register service worker (SW) to enable notifications + background when using FCM */
 if ('serviceWorker' in navigator) {
+  // intenta registrar; si no existe sw.js no interrumpe la ejecución
   navigator.serviceWorker.register('/sw.js').then(reg => {
     console.log('Service Worker registrado', reg);
     swRegistration = reg;
   }).catch(err => {
-    console.warn('No se pudo registrar Service Worker:', err);
+    console.warn('No se pudo registrar Service Worker (posible ausencia de /sw.js):', err);
   });
 }
 
 // Solicitar permiso de notificaciones al cargar
-if (Notification.permission !== "granted") {
-  Notification.requestPermission();
+if (Notification && Notification.permission !== "granted") {
+  Notification.requestPermission().catch(()=>{});
 }
 
 /* ---------- FUNCIONES DE NOTIFICACIÓN ---------- */
 
 let flashing = false;
+let flashInterval = null;
 function startFlash(badgeCount = 0){
   if(flashing) return;
   flashing = true;
   const original = document.title;
   let toggle = false;
-  const interval = setInterval(()=>{
-    if(!flashing){ clearInterval(interval); document.title = original; return; }
+  flashInterval = setInterval(()=>{
+    if(!flashing){ clearInterval(flashInterval); document.title = original; return; }
     document.title = toggle ? `📩 (${badgeCount}) Nuevos mensajes` : original;
     toggle = !toggle;
   }, 700);
 }
-function stopFlash(){ flashing = false; }
+function stopFlash(){
+  flashing = false;
+  if(flashInterval) { clearInterval(flashInterval); flashInterval = null; }
+}
 
 function showDesktopNotification(title, body){
-  if(Notification.permission === "granted"){
-    // si SW está registrado, pedir له عرض الإشعار
-    if(swRegistration && swRegistration.showNotification){
-      try{
+  try {
+    if(!("Notification" in window)) return;
+    if(Notification.permission === "granted"){
+      if(swRegistration && typeof swRegistration.showNotification === 'function'){
         swRegistration.showNotification(title, {
           body,
           icon: "https://cdn-icons-png.flaticon.com/512/889/889140.png",
           tag: 'chat-notif'
+        }).catch(()=> {
+          // fallback
+          new Notification(title, { body, icon: "https://cdn-icons-png.flaticon.com/512/889/889140.png" });
         });
-      } catch(e){ 
-        // fallback
+      } else {
         new Notification(title, { body, icon: "https://cdn-icons-png.flaticon.com/512/889/889140.png" });
       }
-    } else {
-      new Notification(title, { body, icon: "https://cdn-icons-png.flaticon.com/512/889/889140.png" });
     }
-  }
+  } catch(e){ console.warn("Notif error:", e); }
 }
 
 // reproducir sonido
@@ -189,13 +192,11 @@ onValue(usersRef, (snap) => {
     const u = child.val() || {};
     const id = child.key;
 
-    // crear elemento si لا موجود
+    // crear elemento
     const div = document.createElement("div");
     div.className = "userItem";
     div.id = `user-${id}`;
 
-    // obtener unread count (lo leeremos en paralelo y actualizaremos)
-    // también mostraremos lastSeen si existe
     const lastSeen = u.lastSeen ? new Date(u.lastSeen).toLocaleString() : "sin actividad";
 
     div.innerHTML = `
@@ -220,17 +221,14 @@ onValue(usersRef, (snap) => {
       const badgeEl = document.getElementById(`badge-${id}`);
       if(!badgeEl) return;
       badgeEl.innerHTML = count > 0 ? `<span class="badge-unread">${count}</span>` : '';
-      // actualizar عنوان الصفحة global badge (sumar todos)
       updateGlobalUnreadBadge();
     });
 
     // attach listener para nuevo mensaje en la sala (si no existe aún)
     if(!unreadListeners[id]){
       const roomRef = ref(db, `chatMessages/${id}`);
-      // onChildAdded => detecta mensajes nuevos
       onValue(roomRef, (roomSnap) => {
-        // cuando haya nuevos mensajes, se activa onValue; para detectar solo añadidos, podemos comparar timestamps,
-        // pero aquí simplificamos: contamos total y vemos el último mensaje
+        // buscamos el último mensaje (por timestamp)
         let lastTs = 0;
         let lastMsg = null;
         roomSnap.forEach(mch => {
@@ -242,27 +240,23 @@ onValue(usersRef, (snap) => {
         });
         // si hay mensaje nuevo y no estamos en la sala seleccionada => incrementar unread
         if(lastMsg && lastMsg.from !== "admin"){
-          // si admin NO está viendo esta sala => incrementar
           if(selectedUserId !== id){
-            // incrementar contador unread con transaction
             const unreadCountRef = ref(db, `unread/${id}/count`);
             runTransaction(unreadCountRef, (current) => {
               return (current || 0) + 1;
             }).then(()=> {
-              // mostrar notificación (desktop + sound + SW)
               showDesktopNotification("Nuevo mensaje", `${lastMsg.name || 'Usuario'}: ${truncateText(lastMsg.text, 80)}`);
               playSound();
-              // badge global + flash
               startFlash();
             }).catch(()=>{ /* ignore */ });
           }
         }
       });
-      unreadListeners[id] = true; // marque listener agregado
+      unreadListeners[id] = true;
     }
   });
 
-  // conectar botones "Abrir" (después de construir DOM)
+  // conectar botones "Abrir"
   const openBtns = usersList.querySelectorAll(".openBtn");
   openBtns.forEach(b => {
     b.onclick = () => {
@@ -288,7 +282,6 @@ function updateGlobalUnreadBadge(){
   } else {
     stopFlash();
   }
-  // (opcional) يمكنك أيضاً وضع رقم في عنوان الصفحة أو favicon
 }
 
 /* seleccionar sala */
@@ -318,17 +311,19 @@ function listenRoom(userId){
     let newestTs = lastMessageTimestamp || 0;
     snap.forEach(child => {
       const m = child.val();
+      // seguridad: omitir nodes inválidos
+      if(!m || !m.text) return;
       const d = document.createElement("div");
       d.className = "msg " + (m.from === "admin" ? "admin" : "user");
       d.innerHTML = `<span class="who">${m.from === 'admin' ? 'Administración' : (m.name || 'Usuario')}</span>
-                     <div>${m.text}</div>
+                     <div>${escapeHtml(m.text)}</div>
                      <div style="font-size:11px;color:#9aa4b2;margin-top:6px">${m.timestamp ? new Date(m.timestamp).toLocaleString() : ''}</div>`;
       messagesArea.appendChild(d);
       if(m.timestamp && m.timestamp > newestTs) newestTs = m.timestamp;
     });
     messagesArea.scrollTop = messagesArea.scrollHeight;
 
-    // establecer lastMessageTimestamp para evitar notificaciones duplicadas mientras admin esté viendo la sala
+    // establecer lastMessageTimestamp
     lastMessageTimestamp = newestTs;
   });
 }
@@ -337,7 +332,8 @@ function listenRoom(userId){
 function listenTyping(userId){
   const tRef = ref(db, `typing/${userId}`);
   onValue(tRef, (snap) => {
-    typingIndicator.textContent = snap.val()?.typing ? "…está escribiendo" : "";
+    const val = snap.val();
+    typingIndicator.textContent = val && val.typing ? "…está escribiendo" : "";
   });
 }
 
@@ -352,9 +348,8 @@ sendReplyBtn.onclick = async () => {
     name: "Administración",
     timestamp: Date.now()
   });
-  // además، نضع unread صفر لأن المدير قرأ/رد
+  // reset unread y typing
   set(ref(db, `unread/${selectedUserId}/count`), 0).catch(()=>{});
-  // حذف typing
   set(ref(db, `typing/${selectedUserId}`), { typing: false }).catch(()=>{});
   adminReply.value = "";
   stopFlash();
@@ -365,32 +360,33 @@ clearRoomBtn.onclick = () => {
   if(!selectedUserId) return alert("Elige un usuario");
   if(!confirm("¿Eliminar todos los mensajes de esta sala?")) return;
   remove(ref(db, `chatMessages/${selectedUserId}`)).catch(()=>{});
-  // reset unread
   set(ref(db, `unread/${selectedUserId}/count`), 0).catch(()=>{});
 };
 
-/* BOTÓN SALIR (solo informativo) */
-logoutBtn.onclick = () => {
-  alert("Salir no está activo. Esta interfaz está siempre abierta.");
-};
+/* BOTÓN SALIR (redirige a index.html) */
+logoutBtn.addEventListener("click", () => {
+  // si quieres que haga logout real (Firebase Auth) reemplaza por lógica de auth
+  window.location.href = "index.html";
+});
 
 /* ---------- UTILS / INICIALIZACION ---------- */
+
+// escapar texto para evitar inyectar HTML
+function escapeHtml(unsafe) {
+  return unsafe
+   .replaceAll('&', "&amp;")
+   .replaceAll('<', "&lt;")
+   .replaceAll('>', "&gt;")
+   .replaceAll('"', "&quot;")
+   .replaceAll("'", "&#039;");
+}
 
 // Cuando carga la página, actualizamos el badge global
 updateGlobalUnreadBadge();
 
 /*
-  NOTA IMPORTANTE SOBRE "NOTIFICACIONES CUANDO LA PÁGINA ESTÁ CERRADA":
-  ---------------------------------------------------------------
-  - El código anterior muestra notificaciones y usa el Service Worker para mostrarlas
-    cuando la página está en background o abierta.
-  - Para que las notificaciones lleguen cuando LA PÁGINA ESTÁ CERRADA (ventana/ pestaña no abierta)
-    necesitas configurar un servicio de 'push' como Firebase Cloud Messaging (FCM).
-  - Si quieres, te doy los pasos para:
-      1) generar credenciales FCM
-      2) conectar Realtime Database -> Cloud Function -> enviar push a los navegadores
-      3) recibir esos push en este Service Worker (sw.js)
-  - El fichero sw.js incluido (ver archivo aparte) ya maneja eventos 'push' y 'notificationclick'.
+  NOTA SOBRE PUSH: Para recibir notificaciones con la pestaña cerrada necesitas
+  configurar Firebase Cloud Messaging (FCM) y un backend que envíe push.
 */
 
 </script>
